@@ -447,6 +447,11 @@ free-text `calculation` into structured `inputs`, `formula`, `substituted` and
   provided in the record, otherwise they are reported as missing inputs.
 - `createdBy` defaults to `"system"` when omitted.
 - A rollback restores the target version's name, formula **and** status.
+- Save-time validation rejects syntax/reference errors but **allows a timeout**:
+  a formula that fails to finish against sample data has already parsed and
+  begun executing, so its non-termination is a run-time concern that the
+  engine handles as `FAILED` + `SKIPPED` dependents (this is what makes the
+  "formula loops forever" scenario testable through the API).
 
 ---
 

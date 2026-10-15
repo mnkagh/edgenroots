@@ -12,7 +12,7 @@ const { createPreviewService } = require('./services/previewService');
  * tests can swap the pool or the interpreter for fakes.
  */
 function buildContainer({ pool, config, interpretorFn }) {
-  const saveRecord = createSaveRecord(pool);
+  const { saveRecord } = createSaveRecord(pool);
   const formulaRepo = createFormulaRepository(pool);
   const runLogRepo = createRunLogRepository(saveRecord);
   const interpreter = createInterpreter({

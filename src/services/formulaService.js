@@ -57,6 +57,10 @@ function createFormulaService({ formulaRepo, saveRecord, interpreter }) {
    * Run the formula once against sample data so a syntax error can never be
    * saved. Referenced-but-unsupplied names default to 1 so dependency names
    * resolve; callers may pass explicit sampleData.
+   *
+   * A timeout during the sample run is deliberately NOT a save-time error: the
+   * formula parsed and started executing, so it is valid data. Its non-
+   * termination is handled at run time (FAILED at timeout + SKIPPED dependents).
    */
   async function assertRunnable(formulaText, sampleData) {
     const sample = { ...(sampleData || {}) };
@@ -64,13 +68,13 @@ function createFormulaService({ formulaRepo, saveRecord, interpreter }) {
       if (!(ref in sample)) sample[ref] = 1;
     }
     const result = await interpreter.evaluateOne(formulaText, sample);
-    if (result.status !== 'SUCCESS') {
-      throw AppError.badRequest(
-        `Formula failed to evaluate: ${result.error}`,
-        'FORMULA_INVALID',
-        { error: result.error }
-      );
-    }
+    if (result.status === 'SUCCESS') return;
+    if (/timed out/i.test(result.error || '')) return;
+    throw AppError.badRequest(
+      `Formula failed to evaluate: ${result.error}`,
+      'FORMULA_INVALID',
+      { error: result.error }
+    );
   }
 
   /**

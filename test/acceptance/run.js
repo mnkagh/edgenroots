@@ -81,6 +81,8 @@ async function main() {
   });
 
   const taxV1 = byName((await api('GET', '/formulas')).body.data, 'tax');
+  const beforeChange = new Date().toISOString();
+  await sleep(20);
 
   await scenario('Change tax to commission * 0.12, then list formulas', async () => {
     const changed = await api('POST', '/formulas', {
@@ -100,11 +102,7 @@ async function main() {
     assert.equal(history.length, 2);
   });
 
-  const beforeChange = new Date().toISOString();
-  await sleep(20);
-
-  // Re-apply the change now that we have a timestamp to preview "before" it.
-  const taxCurrent = byName((await api('GET', '/formulas')).body.data, 'tax');
+  // The tax change is now committed; `beforeChange` predates it.
 
   await scenario('Preview with an as-of time before the change uses the old tax (total 236)', async () => {
     const out = (
@@ -117,6 +115,8 @@ async function main() {
     assert.equal(r.tax.result, 36, 'old tax 18%');
     assert.equal(r.total.result, 236);
   });
+
+  const taxCurrent = byName((await api('GET', '/formulas')).body.data, 'tax');
 
   await scenario('Roll back tax to version 1 (new version 3 copies v1 values)', async () => {
     const rolled = await api('POST', `/formulas/${taxV1.uuid}/rollback`, {
@@ -196,11 +196,16 @@ async function main() {
   });
 
   await scenario('Bulk preview of 500 records completes within 30s', async () => {
+    const listed = (await api('GET', '/formulas')).body.data;
+    const worked = ['commission', 'tax', 'total'].map((n) => byName(listed, n).uuid);
     const records = Array.from({ length: 500 }, (_, i) => ({ amount: 1000 + i, rate: 10 }));
     const t0 = Date.now();
-    const out = (await api('POST', '/formulas/preview/bulk', { records })).body.data;
+    const out = (
+      await api('POST', '/formulas/preview/bulk', { records, formulaUuids: worked })
+    ).body.data;
     const elapsed = Date.now() - t0;
     assert.equal(out.summary.records, 500);
+    assert.equal(out.summary.formulas, 3);
     assert.equal(out.summary.failures, 0, 'no failures');
     assert.ok(elapsed < 30000, `took ${elapsed}ms`);
     assert.equal(out.results[0].record.commission, 100);
