@@ -21,6 +21,7 @@ Three properties drive the whole design:
 - Tests use the built-in `node:test` runner.
 
 ```
+queries.sql              the seven SQL reports
 src/
   app.js                 express app factory
   server.js              process entry point
@@ -49,7 +50,6 @@ src/
 sql/
   01_schema.sql          tables
   02_views.sql           current-formula view, written two ways
-  03_reports.sql         the seven reports
 test/
   unit/                  fast tests (no database)
   acceptance/run.js      end-to-end scenarios against MySQL
@@ -295,7 +295,7 @@ against real data.
 - run-log: `(formula_name, status, created_at)` for the failure reports,
   `(run_uuid)` for grouping a preview, `(created_at)` for the 7-day window.
 
-The seven reports are in `sql/03_reports.sql`. Report 2 (active formulas in
+The seven reports are in `queries.sql` (repo root). Report 2 (active formulas in
 execution order) reproduces the engine's topological level order in pure SQL: it
 extracts each formula's `EXTERNAL_VAR.*` references with `REGEXP_SUBSTR`,
 keeps the refs that point at another active formula, then walks the resulting
@@ -458,24 +458,21 @@ free-text `calculation` into structured `inputs`, `formula`, `substituted` and
 ## 12. Written answer — why new rows, what it costs, and staying fast
 
 Storing every change as a new row buys three things that matter for money
-numbers: a perfect audit trail (no history is ever lost), trivial concurrency
-(there is nothing to lock or overwrite, so two admins can never clobber each
-other), and safe rollbacks (an old version is still sitting there, so "undo" is
-just another insert). The cost is that the table only ever grows. A formula
-edited ten times a day for years is hundreds of rows, and the *current* lookup
-must ignore all superseded ones. At millions of versions that hurts.
+numbers: a perfect audit trail (history is never lost), trivial concurrency
+(nothing to lock or overwrite, so two admins cannot clobber each other), and
+safe rollbacks (an old version still exists, so "undo" is just another insert).
+The cost is unbounded growth: a formula edited ten times a day for years is
+hundreds of rows, and every *current* lookup must ignore all superseded ones.
+At millions of versions that scan hurts.
 
 To keep it fast: (1) a covering index on `(uuid, id)` so "highest id per uuid"
-is an index scan, and read everything through the current-view so callers never
-scan history; (2) since the hot path only needs the latest row, keep the
-newest-per-uuid easy to find and, if needed, maintain a small materialised
-"pointers"/cache table (still insert-only) that records the current id per uuid;
-(3) partition the table by time (e.g. monthly) so old partitions are cold and
-the active partition stays small; (4) archive versions older than the retention
-window to cheaper storage while keeping the logical current row. Indexes stay
-smaller than the data because they lead with `uuid`, and the run-log (the real
-volume driver) is kept in its own table with time-based pruning. None of these
-change the application: it still writes only inserts and reads only the view.
+is an index scan, and read only through the current view; (2) keep a small,
+still insert-only "current pointer" table mapping uuid to latest id when the
+view gets slow; (3) partition by time so old partitions stay cold; (4) archive
+versions past the retention window to cheap storage while keeping the current
+row. Indexes lead with `uuid`, so they stay small, and the high-volume run log
+lives in its own table with time-based pruning. The app is unchanged: it only
+inserts and reads the view.
 
 ---
 
